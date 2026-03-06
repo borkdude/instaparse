@@ -17,6 +17,12 @@
   #?(:cljs (:require-macros
              [cljs.test :refer [is are deftest run-tests]])))
 
+(defmacro when-not-bb [& body]
+  (when-not (contains? (set (:features @(resolve '*reader-opts*))) :bb)
+    `(do ~@body)))
+
+(def bb? (some? (System/getProperty "babashka.version")))
+
 (defn parsers-similar?
   "Tests if parsers are equal."
   [& parsers]
@@ -153,10 +159,12 @@
      <digit> = #'[0-9]'"
   :output-format :enlive)
 
-(insta/transform 
-  {:word str, 
-   :number (comp read-string str)}
-  (words-and-numbers-one-character-at-a-time "abc 123 def"))
+#?(:bb nil
+   :default
+   (insta/transform
+     {:word str,
+      :number (comp read-string str)}
+     (words-and-numbers-one-character-at-a-time "abc 123 def")))
 
 (def ambiguous
   (insta/parser
@@ -379,10 +387,10 @@
      [:AB [:A "a" "a" "a" "a" "a"] [:B "b" "b" "b"]]
      [:AB [:A "a" "a" "a" "a"] [:B "b" "b"]]]
     
-#?@(:clj [(as-and-bs (StringBuilder. "aaaaabbbaaaabb"))
-          [:S
-           [:AB [:A "a" "a" "a" "a" "a"] [:B "b" "b" "b"]]
-           [:AB [:A "a" "a" "a" "a"] [:B "b" "b"]]]])
+#?@(:bb [] :clj [(as-and-bs (StringBuilder. "aaaaabbbaaaabb"))
+                  [:S
+                   [:AB [:A "a" "a" "a" "a" "a"] [:B "b" "b" "b"]]
+                   [:AB [:A "a" "a" "a" "a"] [:B "b" "b"]]]])
     
     (as-and-bs "aaaaabbbaaaabb")
     (as-and-bs "aaaaabbbaaaabb" :optimize :memory)
@@ -692,7 +700,7 @@
          ((insta/parser "<S> = 'a'"))
          (insta/transform {}))
     '("a")
-    ))    
+    ))
 
 (defn spans [t]
   (if (sequential? t)
@@ -755,7 +763,7 @@
   (insta/parser (prn-str parser)))
 
 (deftest round-trip-test
-  (are [p] (= (prn-str p) (prn-str (round-trip p)))
+  (when-not bb? (are [p] (= (prn-str p) (prn-str (round-trip p)))
        as-and-bs
        as-and-bs-regex
        as-and-bs-variation1
@@ -789,7 +797,7 @@
        whitespace-or-comments
        words-and-numbers-auto-whitespace
        eat-a
-       int-or-double))
+       int-or-double)))
 
 (defn hiccup-line-col-spans [t]
   (if (sequential? t)
@@ -828,6 +836,7 @@
            '[(1 (1 "abc") (2 "def")) (3 (3 "g") (4 "h") (5 "i"))]))))
 
 (deftest print-test
+  (when-not bb?
   ;; In scenarios when AutoFlattenSeq or FlattenOnDemandVector is
   ;; returned to the user, does the parse output print properly?
   (let [parser-str "<paren-wrapped> = <'('> seq-of-A-or-B <')'>
@@ -849,7 +858,7 @@
       (is (= (with-out-str (println expected-output))
              (with-out-str (println actual-output))))
       (is (= (str expected-output)
-             (str actual-output))))))
+             (str actual-output)))))))
 
 (deftest invoke-test
   (let [parser (insta/parser "S = 'a'")

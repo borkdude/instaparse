@@ -1,0 +1,8 @@
+{:paths ["src" "test"]
+ :tasks {test:bb {:doc "Run tests in babashka"
+                  :task (let [result (do (require '[clojure.test :refer [run-tests]])
+                                        (require 'instaparse.core-test)
+                                        (require 'instaparse.failure-test)
+                                        ((resolve 'run-tests) 'instaparse.core-test 'instaparse.failure-test))]
+                          (when-not (and (zero? (:fail result)) (zero? (:error result)))
+                            (System/exit 1)))}}}
