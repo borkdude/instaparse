@@ -47,7 +47,8 @@
 ;; to support the use of instaparse on Google App Engine,
 ;; we simply create our own Segment type.
 
-#?(:clj
+#?(:bb nil
+   :clj
    (deftype Segment [^CharSequence s ^int offset ^int count]
      CharSequence
      (length [this] count)
@@ -196,25 +197,27 @@
 ; which is what happens when tracing is enabled.
 (def failure-type (type (Failure. nil nil)))
 
-#?(:clj
+#?(:bb
+   (defn text->segment [text] text)
+   :clj
    (defn text->segment
      "Converts text to a Segment, which has fast subsequencing"
      [^CharSequence text]
      (Segment. text 0 (count text)))
-
    :cljs
    (defn text->segment
      [text]
      text))
 
-#?(:clj
+#?(:bb
+   (def sub-sequence subs)
+   :clj
    (defn sub-sequence
      "Like clojure.core/subs but consumes and returns a CharSequence"
      (^CharSequence [^CharSequence text start]
       (.subSequence text start (.length text)))
      (^CharSequence [^CharSequence text start end]
       (.subSequence text start end)))
-
    :cljs
    (def sub-sequence subs))
 
@@ -326,8 +329,9 @@
 
 (defn safe-with-meta [obj metamap]
   (if #?(:clj (instance? clojure.lang.IObj obj)
+         :bb (instance? clojure.lang.IObj obj)
          :cljs (satisfies? cljs.core/IWithMeta obj))
-    (with-meta obj metamap)
+    (with-meta obj #?(:bb (merge (meta obj) metamap) :default metamap))
     obj))
 
 (defn push-result
@@ -520,7 +524,7 @@
            :results-so-far results-so-far
            :parser-sequence (map :tag parser-sequence)
            :node-key [(node-key 0) (:tag (node-key 1))]})
-  (fn [result] 
+  (fn [result]
     (let [{parsed-result :result continue-index :index} result
           new-results-so-far (afs/conj-flat results-so-far parsed-result)]
       (if (seq parser-sequence)

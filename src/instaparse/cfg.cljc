@@ -203,21 +203,27 @@
 ;  (binding [*read-eval* false]
 ;    (read-string s)))
 
-#?(:clj
+#?(:bb nil
+   :clj
    (defn wrap-reader [reader]
      (let [{major :major minor :minor} *clojure-version*]
        (if (and (<= major 1) (<= minor 6))
          reader
          (fn [r s] (reader r s {} (java.util.LinkedList.)))))))
 
-#?(:clj
+#?(:bb
+   (defn safe-read-string
+     "Expects a double-quote at the end of the string.
+      Input is string content followed by a closing double-quote."
+     [s]
+     (clojure.edn/read-string (str \" s)))
+   :clj
    (let [string-reader (wrap-reader
                         (clojure.lang.LispReader$StringReader.))]
      (defn safe-read-string
        "Expects a double-quote at the end of the string"
        [s]
        (with-in-str s (string-reader *in* nil))))
-
    :cljs
    (let [read-string* @#'reader/read-string*] ;; since read-string* is private
      (defn safe-read-string [s]

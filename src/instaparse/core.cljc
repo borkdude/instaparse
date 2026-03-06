@@ -137,7 +137,9 @@
          #?(:clj (gll/bind-trace trace?)))))
   
 (defrecord Parser [grammar start-production output-format]
-#?@(:clj
+#?@(:bb
+    []
+    :clj
     [clojure.lang.IFn
      (invoke [parser text] (parse parser text))
      (invoke [parser text key1 val1] (parse parser text key1 val1))

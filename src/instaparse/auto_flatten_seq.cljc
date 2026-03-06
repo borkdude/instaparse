@@ -1,6 +1,7 @@
 (ns instaparse.auto-flatten-seq
-  #?(:clj (:import clojure.lang.PersistentVector))
-  #?(:clj (:require [clojure.core.protocols :refer [IKVReduce]])))
+  #?@(:bb []
+      :clj [(:import clojure.lang.PersistentVector)
+            (:require [clojure.core.protocols :refer [IKVReduce]])]))
 
 (def ^:const threshold 32)
 
@@ -9,12 +10,14 @@
   (cached? [self]))
 
 ; Need a backwards compatible version of mix-collection-hash
-#?(:clj (defmacro compile-if [test then else]
+#?(:bb nil
+   :clj (defmacro compile-if [test then else]
           (if (eval test)
             then
             else)))
 
-#?(:clj (defmacro mix-collection-hash-bc [x y]
+#?(:bb nil
+   :clj (defmacro mix-collection-hash-bc [x y]
           ;; backwards-compatible
           `(compile-if (resolve 'clojure.core/mix-collection-hash)
                        (mix-collection-hash ~x ~y)
@@ -22,7 +25,8 @@
 
 (declare EMPTY hash-cat afs? true-count)
 
-#?(:clj
+#?(:bb nil
+   :clj
    (defmacro hash-conj [premix-hash-v item]
      `(unchecked-add-int (unchecked-multiply-int 31 ~premix-hash-v) (hash ~item)))
    :cljs
@@ -33,7 +37,8 @@
      [unmixed-hash item]
      (+ (imul 31 unmixed-hash) (hash item))))
 
-#?(:clj
+#?(:bb nil
+   :clj
    (defn- expt [base pow]
      (if (zero? pow)
        1
@@ -83,7 +88,8 @@
             (when-let [next-index (advance v index)] 
               (flat-seq v next-index))))))  
 
-#?(:clj
+#?(:bb nil
+:clj
 (deftype AutoFlattenSeq [^PersistentVector v ^int premix-hashcode ^int hashcode
                          ^int cnt ^boolean dirty
                          ^:unsynchronized-mutable ^clojure.lang.ISeq cached-seq]
@@ -229,7 +235,8 @@
         (set! cached-seq (if dirty (flat-seq v) (seq v)))
         cached-seq)))))
 
-#?(:clj
+#?(:bb nil
+   :clj
    (defn- hash-cat ^long [^AutoFlattenSeq v1 ^AutoFlattenSeq v2]
      (let [c (count v2)
            e (int (expt 31 c))]
@@ -243,7 +250,8 @@
        (+ (imul e (.-premix-hashcode v1))
           (- (.-premix-hashcode v2) e)))))
 
-#?(:clj
+#?(:bb nil
+   :clj
    (defn hash-ordered-coll-without-mix ^long [v]
      (compile-if (resolve 'clojure.core/mix-collection-hash)
        (let [thirty-one (int 31)
@@ -275,22 +283,53 @@
      (-pr-writer [afs writer opts]
        (-pr-writer (seq afs) writer opts))))
 
-(defn auto-flatten-seq [v]
-  (let [v (vec v)]
-    (AutoFlattenSeq. v
-                     (hash-ordered-coll-without-mix v)
-                     (hash v) (count v)
-                     false nil)))
+#?(:bb
+   (do
+     (defn- mark-afs
+       ([v] (with-meta v {::afs true}))
+       ([v dirty] (with-meta v {::afs true ::dirty dirty})))
 
-(def EMPTY (auto-flatten-seq []))
+     (defn auto-flatten-seq [v] (mark-afs (vec v)))
 
-(defn afs? [s]
-  (instance? AutoFlattenSeq s))
+     (def EMPTY (auto-flatten-seq []))
 
-(defn true-count [v]
-  (if (afs? v)
-    (count (.-v ^AutoFlattenSeq v))
-    (count v)))
+     (defn afs? [s] (and (vector? s) (::afs (meta s))))
+
+     (defn true-count [v] (count v))
+
+     (extend-type clojure.lang.PersistentVector
+       ConjFlat
+       (conj-flat [self obj]
+         (cond
+           (nil? obj) self
+           (afs? obj)
+           (cond
+             (zero? (count self)) obj
+             (<= (count obj) threshold)
+             (mark-afs (into self obj) (or (::dirty (meta self)) (::dirty (meta obj))))
+             :else
+             (mark-afs (conj self obj) true))
+           :else
+           (mark-afs (conj self obj) (::dirty (meta self)))))
+       (cached? [_] false)))
+   :default
+   (do
+     (defn auto-flatten-seq [v]
+       (let [v (vec v)]
+         (AutoFlattenSeq. v
+                          (hash-ordered-coll-without-mix v)
+                          (hash v) (count v)
+                          false nil)))
+
+     (def EMPTY (auto-flatten-seq []))
+
+     (defn afs? [s]
+       (instance? AutoFlattenSeq s))
+
+     (defn true-count [v]
+       (if (afs? v)
+         (count (.-v ^AutoFlattenSeq v))
+         (count v)))))
 
 ;; For hiccup format, we need to be able to convert the seq to a vector.
 
@@ -307,10 +346,13 @@
   [v]
   (persistent! (flat-vec-helper (transient []) v)))
 
-(defprotocol GetVec
-  (^PersistentVector get-vec [self]))
+#?(:bb nil
+   :default
+   (defprotocol GetVec
+     (^PersistentVector get-vec [self])))
 
-#?(:clj
+#?(:bb nil
+:clj
 (deftype FlattenOnDemandVector [v   ; ref containing PersistentVector or nil 
                                 ^int hashcode
                                 ^int cnt
@@ -507,22 +549,29 @@
      (-pr-writer [v writer opts]
        (-pr-writer (get-vec v) writer opts))))
 
-(defn convert-afs-to-vec [^AutoFlattenSeq afs]
-  (cond
-    (.-dirty afs)
-    (if (cached? afs)
-      (vec (seq afs))
-      #?(:clj
-         (FlattenOnDemandVector.
-          (ref (.-v afs))
-          (.-hashcode afs)
-          (.-cnt afs)
-          (ref nil))
-         :cljs
-         (FlattenOnDemandVector.
-          (atom (.-v afs))
-          (.-hashcode afs)
-          (.-cnt afs)
-          (atom nil))))
-    :else
-    (.-v afs)))
+#?(:bb
+   (defn convert-afs-to-vec [afs]
+     (if (::dirty (meta afs))
+       (with-meta (persistent! (flat-vec-helper (transient []) afs))
+                  (dissoc (meta afs) ::afs ::dirty))
+       (with-meta afs (dissoc (meta afs) ::afs ::dirty))))
+   :default
+   (defn convert-afs-to-vec [^AutoFlattenSeq afs]
+     (cond
+       (.-dirty afs)
+       (if (cached? afs)
+         (vec (seq afs))
+         #?(:clj
+            (FlattenOnDemandVector.
+             (ref (.-v afs))
+             (.-hashcode afs)
+             (.-cnt afs)
+             (ref nil))
+            :cljs
+            (FlattenOnDemandVector.
+             (atom (.-v afs))
+             (.-hashcode afs)
+             (.-cnt afs)
+             (atom nil))))
+       :else
+       (.-v afs))))

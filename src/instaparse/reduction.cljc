@@ -38,9 +38,9 @@
 
 (defn apply-reduction [f result]
   (case (:reduction-type f)
-    :raw (afs/conj-flat afs/EMPTY result)               
+    :raw (afs/conj-flat afs/EMPTY result)
     :hiccup (afs/convert-afs-to-vec (afs/conj-flat (afs/auto-flatten-seq [(:key f)]) result))
-    :enlive 
+    :enlive
     (let [content (afs/conj-flat afs/EMPTY result)]
       {:tag (:key f), :content (if (zero? (count content)) nil content)})
     (f result)))
