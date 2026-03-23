@@ -21,7 +21,7 @@
   (when-not (contains? (set (:features @(resolve '*reader-opts*))) :bb)
     `(do ~@body)))
 
-(def bb? (some? (System/getProperty "babashka.version")))
+(def bb? (System/getProperty "babashka.version"))
 
 (defn parsers-similar?
   "Tests if parsers are equal."
