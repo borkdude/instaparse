@@ -198,7 +198,22 @@
 (def failure-type (type (Failure. nil nil)))
 
 #?(:bb
-   (defn text->segment [text] text)
+   (defn ->segment [^CharSequence s offset cnt]
+     (reify CharSequence
+       (length [_] cnt)
+       (subSequence [_ start end]
+         (->segment s (+ offset start) (- end start)))
+       (charAt [_ index]
+         (.charAt s (+ offset index)))
+       (toString [_]
+         (.toString (doto (StringBuilder. cnt)
+                      (.append s offset (+ offset cnt))))))))
+
+#?(:bb
+   (defn text->segment
+     "Converts text to a Segment, which has fast subsequencing"
+     [^CharSequence text]
+     (->segment text 0 (count text)))
    :clj
    (defn text->segment
      "Converts text to a Segment, which has fast subsequencing"
@@ -209,17 +224,15 @@
      [text]
      text))
 
-#?(:bb
+#?(:cljs
    (def sub-sequence subs)
-   :clj
+   :default
    (defn sub-sequence
      "Like clojure.core/subs but consumes and returns a CharSequence"
      (^CharSequence [^CharSequence text start]
       (.subSequence text start (.length text)))
      (^CharSequence [^CharSequence text start end]
-      (.subSequence text start end)))
-   :cljs
-   (def sub-sequence subs))
+      (.subSequence text start end))))
 
 ; The trampoline structure contains the grammar, text to parse, a stack and a nodes
 ; Also contains an atom to hold successes and one to hold index of failure point.
@@ -329,7 +342,6 @@
 
 (defn safe-with-meta [obj metamap]
   (if #?(:clj (instance? clojure.lang.IObj obj)
-         :bb (instance? clojure.lang.IObj obj)
          :cljs (satisfies? cljs.core/IWithMeta obj))
     (with-meta obj #?(:bb (merge (meta obj) metamap) :default metamap))
     obj))
