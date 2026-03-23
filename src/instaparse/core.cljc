@@ -62,8 +62,7 @@
   [parser text &{:as options}]
   {:pre [(contains? #{:tags :content :all nil} (get options :unhide))
          (contains? #{:memory nil} (get options :optimize))]}
-  (let [parser (or (::parser-record (meta parser)) parser)
-        start-production
+  (let [start-production
         (get options :start (:start-production parser)),
 
         partial?
@@ -96,12 +95,12 @@
            (gll/parse (:grammar parser) start-production text partial?))
 
          #?(:clj (gll/bind-trace trace?)))))
-  
-(defn parses 
+
+(defn parses
   "Use parser to parse the text.  Returns lazy seq of all parse trees
    that completely parse the text.  If no parse tree is possible, returns
    () with a Failure object attached as metadata.
-   
+
    Optional keyword arguments:
    :start :keyword  (where :keyword is name of starting production rule)
    :partial true    (parses that don't consume the whole string are okay)
@@ -112,8 +111,7 @@
    :trace true      (print diagnostic trace while parsing)"
   [parser text &{:as options}]
   {:pre [(contains? #{:tags :content :all nil} (get options :unhide))]}
-  (let [parser (or (::parser-record (meta parser)) parser)
-        start-production
+  (let [start-production
         (get options :start (:start-production parser)),
 
         partial?
@@ -138,20 +136,8 @@
 
          #?(:clj (gll/bind-trace trace?)))))
   
-#?(:bb
-   (defn callable-parser
-     "Wraps a Parser record in a fn so it can be called as a function in babashka."
-     [record]
-     (with-meta
-       (fn
-         ([text] (parse record text))
-         ([text & args] (apply parse record text args)))
-       {::parser-record record})))
-
 (defrecord Parser [grammar start-production output-format]
-#?@(:bb
-    []
-    :clj
+#?@(:clj
     [clojure.lang.IFn
      (invoke [parser text] (parse parser text))
      (invoke [parser text key1 val1] (parse parser text key1 val1))
@@ -216,9 +202,7 @@
   [grammar-specification &{:as options}]
   {:pre [(contains? #{:abnf :ebnf nil} (get options :input-format))
          (contains? #{:enlive :hiccup nil} (get options :output-format))
-         (let [ws-parser (get options :auto-whitespace)
-               ws-parser #?(:bb (or (::parser-record (meta ws-parser)) ws-parser)
-                            :default ws-parser)]
+         (let [ws-parser (get options :auto-whitespace)]
            (or (nil? ws-parser)
                (contains? standard-whitespace-parsers ws-parser)
                (and
@@ -285,16 +269,12 @@
           whitespace-parser (if (keyword? auto-whitespace)
                               (get standard-whitespace-parsers auto-whitespace)
                               auto-whitespace)
-          whitespace-parser #?(:bb (or (::parser-record (meta whitespace-parser)) whitespace-parser)
-                               :default whitespace-parser)
-          result
-          (if-let [{ws-grammar :grammar ws-start :start-production} whitespace-parser]
-            (assoc built-parser :grammar
-                   (c/auto-whitespace (:grammar built-parser) (:start-production built-parser)
-                                      ws-grammar ws-start))
-            built-parser)]
-      #?(:bb (callable-parser result)
-         :default result))))
+          ]
+      (if-let [{ws-grammar :grammar ws-start :start-production} whitespace-parser]
+        (assoc built-parser :grammar
+               (c/auto-whitespace (:grammar built-parser) (:start-production built-parser)
+                                  ws-grammar ws-start))
+        built-parser))))
 
 #?(:clj
    (defmacro defparser
@@ -324,8 +304,7 @@
                                                       :string-ci
                                                       :no-slurp])
                    runtime-opts (dissoc opts :start)
-                   macro-time-parser (let [p (apply parser grammar (apply concat macro-time-opts))]
-                                       (or (::parser-record (meta p)) p))
+                   macro-time-parser (apply parser grammar (apply concat macro-time-opts))
                    pre-processed-grammar (:grammar macro-time-parser)
 
                    grammar-producing-code
@@ -370,10 +349,8 @@
     nil))
 
 (def ^:private standard-whitespace-parsers
-  {:standard #?(:bb (cfg/build-parser "whitespace = #'\\s+'" :hiccup)
-                :default (parser "whitespace = #'\\s+'"))
-   :comma #?(:bb (cfg/build-parser "whitespace = #'[,\\s]+'" :hiccup)
-             :default (parser "whitespace = #'[,\\s]+'"))})
+  {:standard (parser "whitespace = #'\\s+'")
+   :comma (parser "whitespace = #'[,\\s]+'")})
 
 #?(:clj
    (defn enable-tracing!
